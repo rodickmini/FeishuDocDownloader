@@ -1,6 +1,6 @@
 import requests
 import time
-from config import APP_ID, APP_SECRET
+from config import APP_ID, APP_SECRET, FOLDER_TOKEN
 
 # 飞书API的基本URL
 BASE_URL = 'https://open.feishu.cn/open-apis'
@@ -105,7 +105,7 @@ def download_exported_file(file_token, tenant_access_token):
 
 # 主程序
 if __name__ == "__main__":
-    folder_token = 'SEsjfIT2kllhAgdvFPIcVDVenrC'  # 替换为你的文件夹token
+    folder_token = FOLDER_TOKEN  # 替换为你的文件夹token
     tenant_access_token = get_tenant_access_token()
     docs = get_folder_docs(folder_token, tenant_access_token)
     doc_token = docs[1]['token']
