@@ -2,12 +2,8 @@ import requests
 import time
 from config import APP_ID, APP_SECRET, FOLDER_TOKEN
 
-# 飞书API的基本URL
-BASE_URL = 'https://open.feishu.cn/open-apis'
-
 # 获取 tenant_access_token
 def get_tenant_access_token():
-    url = f'{BASE_URL}/auth/v3/tenant_access_token/internal/'
     headers = {
         'Content-Type': 'application/json; charset=utf-8'
     }
@@ -15,17 +11,18 @@ def get_tenant_access_token():
         'app_id': APP_ID,
         'app_secret': APP_SECRET
     }
-    response = requests.post(url, json=payload, headers=headers)
+    response = requests.post('https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal/', json=payload, headers=headers)
     response_data = response.json()
     # 检查访问令牌是否成功获取
     if response_data.get('code') != 0:
         raise Exception(f"Failed to get tenant access token: {response_data}")
+    
     print('tenant_access_token:', response_data['tenant_access_token'])
     return response_data['tenant_access_token']
 
 # 获取文件夹中的文件列表
 def get_folder_docs(folder_token, tenant_access_token):
-    url = f'{BASE_URL}/drive/v1/files?direction=DESC&folder_token={folder_token}&order_by=EditedTime'
+    url = f'https://open.feishu.cn/open-apis/drive/v1/files?direction=DESC&folder_token={folder_token}&order_by=EditedTime'
     headers = {
         'Authorization': f'Bearer {tenant_access_token}'
     }
@@ -34,30 +31,38 @@ def get_folder_docs(folder_token, tenant_access_token):
     if response.status_code != 200:
         print(f"Error: Received status code {response.status_code}")
         print("Response text:", response.text)
+        
         return []
     
     try:
         data = response.json()
         fileList = data.get('data', {}).get('files', [])
         print('fileList:', [el["name"] for el in fileList])
+        
+        # 返回文件列表
         return fileList
     except ValueError:
         print("Error: Failed to parse JSON response.")
         print("Response text:", response.text)
+       
         return []
     
 # 创建导出任务
 # https://open.feishu.cn/document/server-docs/docs/drive-v1/export_task/create?appId=cli_a7a99766a47f900c
-def create_export_task(doc_token, tenant_access_token):
+def create_export_task(doc, tenant_access_token):
     headers = {
         'Authorization': f'Bearer {tenant_access_token}',
         'Content-Type': 'application/json; charset=utf-8'
     }
 
+    extension = {
+        'docx': 'docx',
+        'sheet': 'xlsx',
+    }
     payload = {
-        'file_extension': 'docx',
-        'token': doc_token,
-        'type': 'docx'
+        'file_extension': extension[doc['type']],
+        'token': doc['token'],
+        'type': doc['type']
     }
 
     response = requests.post('https://open.feishu.cn/open-apis/drive/v1/export_tasks', json=payload, headers=headers)
@@ -69,20 +74,26 @@ def create_export_task(doc_token, tenant_access_token):
 
     return response_data['data']['ticket']
     
-def request_task_progress(ticket, doc_token, tenant_access_token):
+def batch_request_task_progress(docs, tenant_access_token):
     headers = {
         'Authorization': f'Bearer {tenant_access_token}'
     }
-    response = requests.get(f'https://open.feishu.cn/open-apis/drive/v1/export_tasks/{ticket}?token={doc_token}', headers=headers)
-    
-    print(response.json())
-    response_data = response.json()
-    if(response_data.get('code') == 0):
-        if(response_data['data']['result']['job_status'] == 0):
-          file_token = response_data['data']['result']['file_token']
-          download_exported_file(file_token, tenant_access_token)
+    while True:
+        time.sleep(1)
+        print('检查是否有完成的')
+        for doc in docs:
+            if 'done' not in doc:
+                response = requests.get(f'https://open.feishu.cn/open-apis/drive/v1/export_tasks/{doc['ticket']}?token={doc['token']}', headers=headers)
+                print(response.json())
+                response_data = response.json()
+                if((response_data.get('code') == 0) & (response_data['data']['result']['job_status'] == 0)):
+                    file_token = response_data['data']['result']['file_token']
+                    download_exported_file(file_token, doc, tenant_access_token)
+                    doc['done'] = True
+                
+            
         
-def download_exported_file(file_token, tenant_access_token):
+def download_exported_file(file_token, doc, tenant_access_token):
     headers = {
         'Authorization': f'Bearer {tenant_access_token}'
     }
@@ -91,7 +102,7 @@ def download_exported_file(file_token, tenant_access_token):
     
     # print(response.json())
 
-    save_path = './test.docx'
+    save_path = f'./{doc['name']}.{doc['type']}'
     # 检查响应状态
     if response.status_code == 200:
         # 打开文件并以二进制写入模式保存内容
@@ -103,14 +114,40 @@ def download_exported_file(file_token, tenant_access_token):
         print("响应内容:", response.text)
 
 
+def batch_create_export_task(docs, tenant_access_token):
+    for doc in docs:
+        if doc['type'] not in ['docx', 'sheet']:
+            continue
+        ticket = create_export_task(doc, tenant_access_token)
+        doc['ticket'] = ticket
+    return docs
+
 # 主程序
 if __name__ == "__main__":
     folder_token = FOLDER_TOKEN  # 替换为你的文件夹token
     tenant_access_token = get_tenant_access_token()
-    docs = get_folder_docs(folder_token, tenant_access_token)
+    docs = get_folder_docs(folder_token, tenant_access_token) # 获取文件夹中的文件列表
+    
+    '''
+    docs = 
+    [{
+        'created_time': '1711352459', 
+        'modified_time': '1725866769', 
+        'name': 'IM每日监控指标', 
+        'owner_id': 'ou_a6c5def8ef271d8ec06e191fe1aff102', 
+        'parent_token': 'SEsjfIT2kllhAgdvFPIcVDVenrC', 
+        'token': 'X1jRbx552miXyjnsHpHcw45QnYg', 
+        'type': 'mindnote', 
+        'url': 'https://kxc9f7uc79s.feishu.cn/mindnotes/X1jRbx552miXyjnsHpHcw45QnYg'
+    }]
     doc_token = docs[1]['token']
-    ticket = create_export_task(doc_token, tenant_access_token)
+    
+    解析出数组中的doc_token，文件名，文件类型，批量创建导出任务，任务的ticket也分别存在各项的ticket字段中
+    '''
+    docs = batch_create_export_task(docs, tenant_access_token)
+    
+    print(docs)
 
-    # 每隔1秒查询一次
-    time.sleep(10)
-    request_task_progress(ticket, doc_token, tenant_access_token)
+    # 此时docs数组中包含ticket字段
+
+    batch_request_task_progress(docs, tenant_access_token)
