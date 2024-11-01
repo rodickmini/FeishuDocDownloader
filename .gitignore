@@ -2,6 +2,7 @@
 config.py
 *.docx
 *.doc
+*.xslx
 
 
 # Byte-compiled / optimized / DLL files
