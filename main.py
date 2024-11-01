@@ -114,7 +114,7 @@ def download_exported_file(file_token, doc, tenant_access_token):
 
     response = requests.get(f'https://open.feishu.cn/open-apis/drive/v1/export_tasks/file/{file_token}/download', headers=headers)
     
-    save_path = f'./{doc['name']}.{doc['type']}'
+    save_path = f'./output/{doc['name']}.{doc['type']}'
     # 检查响应状态
     if response.status_code == 200:
         # 打开文件并以二进制写入模式保存内容
