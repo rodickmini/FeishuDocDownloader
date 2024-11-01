@@ -17,7 +17,7 @@ def get_tenant_access_token():
     if response_data.get('code') != 0:
         raise Exception(f"Failed to get tenant access token: {response_data}")
     
-    print('tenant_access_token:', response_data['tenant_access_token'])
+    print('获取tenant_access_token成功:', response_data['tenant_access_token'])
     return response_data['tenant_access_token']
 
 # 获取文件夹中的文件列表
@@ -37,7 +37,7 @@ def get_folder_docs(folder_token, tenant_access_token):
     try:
         data = response.json()
         fileList = data.get('data', {}).get('files', [])
-        print('fileList:', [el["name"] for el in fileList])
+        print('获取文件列表成功:', [el["name"] for el in fileList])
         
         # 返回文件列表
         return fileList
@@ -47,7 +47,7 @@ def get_folder_docs(folder_token, tenant_access_token):
        
         return []
     
-# 创建导出任务
+# 创建单个导出任务
 # https://open.feishu.cn/document/server-docs/docs/drive-v1/export_task/create?appId=cli_a7a99766a47f900c
 def create_export_task(doc, tenant_access_token):
     headers = {
@@ -67,32 +67,46 @@ def create_export_task(doc, tenant_access_token):
 
     response = requests.post('https://open.feishu.cn/open-apis/drive/v1/export_tasks', json=payload, headers=headers)
 
-    print(response.json())
+    print('创建导出任务成功：', response.json())
     response_data = response.json()
     if response_data.get('code') != 0:
         raise Exception(f"Failed to get tenant access token: {response_data.get('msg')} (code: {response_data.get('code')})")
 
     return response_data['data']['ticket']
-    
+
+# 批量创建导出任务
+def batch_create_export_task(docs, tenant_access_token):
+    for doc in docs:
+        if doc['type'] not in ['docx', 'sheet']:
+            continue
+        ticket = create_export_task(doc, tenant_access_token)
+        doc['ticket'] = ticket
+    return docs
+
+# 批量查询任务进度
 def batch_request_task_progress(docs, tenant_access_token):
     headers = {
         'Authorization': f'Bearer {tenant_access_token}'
     }
-    while True:
-        time.sleep(1)
-        print('检查是否有完成的')
+    finish_count = 0
+    wait_seconds = 10
+    while (finish_count < len(docs)):
+        print(f'{wait_seconds}秒后查询导出结果……')
+        time.sleep(wait_seconds)
         for doc in docs:
             if 'done' not in doc:
                 response = requests.get(f'https://open.feishu.cn/open-apis/drive/v1/export_tasks/{doc['ticket']}?token={doc['token']}', headers=headers)
-                print(response.json())
+                
                 response_data = response.json()
                 if((response_data.get('code') == 0) & (response_data['data']['result']['job_status'] == 0)):
                     file_token = response_data['data']['result']['file_token']
                     download_exported_file(file_token, doc, tenant_access_token)
                     doc['done'] = True
+                    finish_count += 1
+                    print(f'已完成{finish_count}/{len(docs)}')
                 
             
-        
+# 下载单个文件
 def download_exported_file(file_token, doc, tenant_access_token):
     headers = {
         'Authorization': f'Bearer {tenant_access_token}'
@@ -100,8 +114,6 @@ def download_exported_file(file_token, doc, tenant_access_token):
 
     response = requests.get(f'https://open.feishu.cn/open-apis/drive/v1/export_tasks/file/{file_token}/download', headers=headers)
     
-    # print(response.json())
-
     save_path = f'./{doc['name']}.{doc['type']}'
     # 检查响应状态
     if response.status_code == 200:
@@ -112,15 +124,6 @@ def download_exported_file(file_token, doc, tenant_access_token):
     else:
         print(f"下载失败，状态码: {response.status_code}")
         print("响应内容:", response.text)
-
-
-def batch_create_export_task(docs, tenant_access_token):
-    for doc in docs:
-        if doc['type'] not in ['docx', 'sheet']:
-            continue
-        ticket = create_export_task(doc, tenant_access_token)
-        doc['ticket'] = ticket
-    return docs
 
 # 主程序
 if __name__ == "__main__":
@@ -142,11 +145,11 @@ if __name__ == "__main__":
     }]
     doc_token = docs[1]['token']
     
-    解析出数组中的doc_token，文件名，文件类型，批量创建导出任务，任务的ticket也分别存在各项的ticket字段中
+    解析出数组中的doc_token, 文件名, 文件类型, 批量创建导出任务, 任务的ticket也分别存在各项的ticket字段中
     '''
     docs = batch_create_export_task(docs, tenant_access_token)
     
-    print(docs)
+    print('批量创建导出任务成功')
 
     # 此时docs数组中包含ticket字段
 
